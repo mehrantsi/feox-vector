@@ -1,0 +1,50 @@
+[package]
+name = "feox-vector"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mehran Toosi <dev@mehran.dk>"]
+description = "Embedded vector store on FeOxDB - exact and ANN cosine search with metadata filtering"
+documentation = "https://docs.rs/feox-vector"
+homepage = "https://feoxdb.com"
+repository = "https://github.com/mehrantsi/feox-vector"
+readme = "README.md"
+keywords = ["vector-search", "embeddings", "ann", "hnsw", "similarity"]
+categories = ["database", "data-structures", "algorithms"]
+license = "Apache-2.0"
+
+[dependencies]
+arc-swap = "1.7"
+feox-ann = "0.1"
+feoxdb = { version = "0.5", default-features = false }
+scc = "2.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+criterion = "0.7"
+
+[features]
+default = []
+jemalloc = ["feoxdb/jemalloc"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+debug = false
+strip = true
+
+[profile.bench]
+inherits = "release"
+
+[[example]]
+name = "basic_usage"
+
+[[bench]]
+name = "vector"
+harness = false
+
+[lib]
+name = "feox_vector"
+path = "src/lib.rs"

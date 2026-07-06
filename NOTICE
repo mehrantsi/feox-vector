@@ -1,0 +1,21 @@
+FeOx Vector
+Copyright 2026 Mehran Toosi
+
+This product includes software developed by
+The FeOx Project (https://github.com/mehrantsi/feox-vector).
+
+================================================================
+
+This software includes the following third-party components:
+
+- FeOxDB: Licensed under Apache-2.0
+  Copyright 2025 Mehran Toosi
+  https://github.com/mehrantsi/feoxdb
+
+- SCC (Scalable Concurrent Containers): Licensed under Apache-2.0
+  Copyright (c) 2023 wvwwvwwv
+  https://github.com/wvwwvwwv/scalable-concurrent-containers
+
+- arc-swap: Licensed under MIT OR Apache-2.0
+  Copyright (c) 2017 arc-swap developers
+  https://github.com/vorner/arc-swap
