@@ -127,6 +127,11 @@ impl Store {
         Ok(pairs)
     }
 
+    pub fn flush(&self) -> Result<()> {
+        self.inner.flush()?;
+        Ok(())
+    }
+
     pub fn stats(&self) -> StoreStats {
         StoreStats {
             records: self.inner.len(),

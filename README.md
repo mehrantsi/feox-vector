@@ -13,7 +13,7 @@ Embedded vector store for Rust, built on [FeOxDB](https://github.com/mehrantsi/f
 - **Exact and ANN Queries**: Brute-force scans for small or heavily filtered collections, HNSW (via [feox-ann](https://github.com/mehrantsi/feox-ann)) for large ones. Selectable per query.
 - **SIMD Scoring**: Cosine similarity runs on feox-ann's NEON (aarch64) and AVX2+FMA (x86_64, runtime-detected) dot-product kernels, on both the exact and ANN paths.
 - **Metadata Filtering**: `$eq`, `$in`, `$nin` operators compiled against an inverted facet index. Small filtered candidate sets are re-ranked exactly instead of traversing the ANN graph, so selective filters return exact results.
-- **Lock-Free Index Refresh**: ANN snapshots publish through `arc-swap`. Writes mark a scope dirty and a background thread rebuilds while queries keep flowing. Until a snapshot is ready, ANN queries fall back to exact scans.
+- **Lock-Free Index Refresh**: ANN snapshots publish through `arc-swap`. Writes mark a scope dirty and a background thread rebuilds while queries keep flowing. Until a fresh snapshot is ready, ANN queries fall back to exact scans so completed writes and deletes are immediately visible.
 - **Deterministic Output**: feox-ann builds reproducible graphs, and results rank by score, then recency, then id. Identical data returns identical output.
 - **Namespaced Collections**: Records scope by `namespace / index / partition`. One store serves many collections.
 - **Memory or Disk**: Run fully in memory, or point FeOxDB at a file for persistence with write-behind buffering.
@@ -61,6 +61,10 @@ let store = Store::open(StoreConfig {
     device_path: Some("/var/lib/myapp/vectors.feox".into()),
     ..Default::default()
 })?;
+let vectors = VectorStore::new(store);
+
+// Flush at application commit points that must survive abrupt process exit.
+vectors.flush()?;
 ```
 
 ## Metadata Filters
@@ -97,7 +101,7 @@ let result = vectors.query("app", "docs", "main", VectorQueryInput {
 })?;
 ```
 
-The first ANN query on a scope schedules a background build and answers exactly in the meantime. Writes mark the scope dirty and trigger a fresh rebuild on the next ANN query. Queries always see a consistent snapshot.
+The first ANN query on a scope schedules a background build and answers exactly in the meantime. Writes mark the scope dirty and trigger a fresh rebuild on the next ANN query. Dirty and rebuilding scopes answer exactly until the fresh snapshot publishes, preserving read-after-write semantics without locking query execution.
 
 **Note**: ANN snapshots are in-memory and rebuilt from stored records on process start (first ANN query per scope). Records themselves persist via FeOxDB.
 

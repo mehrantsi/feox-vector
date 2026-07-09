@@ -129,6 +129,11 @@ impl VectorStore {
         Ok(VectorDeleteResult { deleted })
     }
 
+    pub fn flush(&self) -> Result<()> {
+        self.store.flush()?;
+        Ok(())
+    }
+
     fn query_exact(
         &self,
         namespace: &str,
@@ -236,7 +241,7 @@ impl VectorStore {
         let ef_search = ann_ef_search(input.ef_search, candidate_limit)?;
         let scope = scope_key(namespace, index, partition);
         let ann_scope = self.indexes.scope(&scope);
-        let Some(snapshot) = ann_scope.snapshot() else {
+        let Some(snapshot) = ann_scope.query_snapshot() else {
             self.schedule_ann_rebuild(
                 namespace.to_string(),
                 index.to_string(),
@@ -256,16 +261,6 @@ impl VectorStore {
             );
             return Ok(None);
         }
-        if ann_scope.is_dirty() {
-            self.schedule_ann_rebuild(
-                namespace.to_string(),
-                index.to_string(),
-                partition.to_string(),
-                scope.clone(),
-                input.vector.len(),
-            );
-        }
-
         let compiled_filter = snapshot.filters.compile(&input.filter);
         if compiled_filter.is_none() {
             return Ok(Some(VectorQueryResult {
@@ -428,7 +423,9 @@ impl VectorStore {
         }
 
         let store = self.clone();
-        let _ = thread::Builder::new()
+        let rebuild_scope = scope.clone();
+        let rebuild_scope_key = scope_key.clone();
+        let spawn_result = thread::Builder::new()
             .name("feox-ann-rebuild".to_string())
             .spawn(move || {
                 let result = store.rebuild_ann_index(
@@ -438,13 +435,19 @@ impl VectorStore {
                     AnnConfig::for_dimensions(dimensions),
                 );
                 match result {
-                    Ok(index) => scope.publish(index),
+                    Ok(index) => rebuild_scope.publish(index),
                     Err(error) => {
-                        scope.finish_failed_rebuild();
-                        eprintln!("[feox-vector] ANN rebuild failed for {scope_key}: {error}");
+                        rebuild_scope.finish_failed_rebuild();
+                        eprintln!(
+                            "[feox-vector] ANN rebuild failed for {rebuild_scope_key}: {error}"
+                        );
                     }
                 }
             });
+        if let Err(error) = spawn_result {
+            scope.finish_failed_rebuild();
+            eprintln!("[feox-vector] failed to start ANN rebuild for {scope_key}: {error}");
+        }
     }
 
     fn get_record(&self, key: &str) -> Result<Option<VectorRecord>> {

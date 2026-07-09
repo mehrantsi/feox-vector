@@ -1,6 +1,6 @@
 [package]
 name = "feox-vector"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Mehran Toosi <dev@mehran.dk>"]
 description = "Embedded vector store on FeOxDB - exact and ANN cosine search with metadata filtering"

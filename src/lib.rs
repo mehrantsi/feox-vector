@@ -14,13 +14,13 @@
 //!   results.
 //! - **Lock-free index refresh**: ANN snapshots are published through `arc-swap`.
 //!   Writes mark a scope dirty and a background thread rebuilds without blocking
-//!   queries. Queries fall back to exact scans until a snapshot is ready.
+//!   queries. Queries fall back to exact scans until a fresh snapshot is ready.
 //! - **Deterministic ranking**: results order by score, then recency, then id.
 //!   Identical data returns identical output.
 //! - **Namespaced collections**: records are scoped by `namespace / index /
 //!   partition`, so one store serves many collections.
 //! - **Memory or disk**: run fully in memory, or give FeOxDB a file path for
-//!   persistence with write-behind buffering.
+//!   persistence with write-behind buffering and explicit commit-point flushes.
 //!
 //! ## Quick start
 //!
@@ -57,8 +57,9 @@
 //!
 //! Pass `mode: Some(VectorQueryMode::Ann)` to use the HNSW index. The first ANN
 //! query on a scope schedules a background build and serves the query exactly in
-//! the meantime. Subsequent queries hit the snapshot. Rebuilds are triggered
-//! automatically when writes dirty the scope, or explicitly via
+//! the meantime. Dirty or rebuilding scopes also serve exact results, preserving
+//! read-after-write semantics. Rebuilds are triggered automatically after writes,
+//! or explicitly via
 //! [`VectorStore::rebuild_ann`] / [`VectorStore::rebuild_ann_with_config`].
 
 mod ann;

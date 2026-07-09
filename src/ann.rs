@@ -57,12 +57,23 @@ impl AnnScope {
         self.snapshot.load_full()
     }
 
+    pub(crate) fn query_snapshot(&self) -> Option<Arc<AnnSnapshot>> {
+        if self.requires_exact_query() {
+            return None;
+        }
+        let snapshot = self.snapshot.load_full();
+        if self.requires_exact_query() {
+            return None;
+        }
+        snapshot
+    }
+
     pub(crate) fn mark_dirty(&self) {
         self.dirty.store(true, Ordering::Release);
     }
 
-    pub(crate) fn is_dirty(&self) -> bool {
-        self.dirty.load(Ordering::Acquire)
+    fn requires_exact_query(&self) -> bool {
+        self.dirty.load(Ordering::Acquire) || self.rebuilding.load(Ordering::Acquire)
     }
 
     pub(crate) fn begin_rebuild(&self) -> bool {

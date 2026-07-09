@@ -1,5 +1,7 @@
 use crate::storage::{Store, StoreConfig};
 use serde_json::json;
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{VectorDeleteInput, VectorQueryInput, VectorQueryMode, VectorStore, VectorUpsertInput};
 
@@ -99,6 +101,68 @@ fn deletes_records() {
 }
 
 #[test]
+fn flush_persists_records_for_reopen() {
+    let directory = std::env::temp_dir().join(format!(
+        "feox-vector-flush-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("vectors.feox");
+    let config = StoreConfig {
+        device_path: Some(path),
+        file_size: Some(16 * 1024 * 1024),
+        max_memory: Some(64 * 1024 * 1024),
+    };
+
+    {
+        let store = VectorStore::new(Store::open(config.clone()).unwrap());
+        store
+            .upsert(
+                "ns-a",
+                "memory",
+                "user-a",
+                VectorUpsertInput {
+                    records: vec![crate::VectorUpsertRecord {
+                        id: "durable".to_string(),
+                        values: vec![1.0, 0.0],
+                        metadata: Default::default(),
+                    }],
+                },
+            )
+            .unwrap();
+        store.flush().unwrap();
+    }
+
+    {
+        let store = VectorStore::new(Store::open(config).unwrap());
+        let result = store
+            .query(
+                "ns-a",
+                "memory",
+                "user-a",
+                VectorQueryInput {
+                    vector: vec![1.0, 0.0],
+                    top_k: Some(1),
+                    filter: Default::default(),
+                    min_score: None,
+                    mode: None,
+                    ef_search: None,
+                    candidate_limit: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].id, "durable");
+    }
+
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn ann_query_uses_rebuilt_snapshot() {
     let raw_store = Store::open(StoreConfig::default()).unwrap();
     let writer = VectorStore::new(raw_store.clone());
@@ -152,6 +216,117 @@ fn ann_query_uses_rebuilt_snapshot() {
 
     assert_eq!(result.matches.len(), 1);
     assert_eq!(result.matches[0].id, "north");
+}
+
+#[test]
+fn ann_query_sees_upsert_immediately_after_snapshot() {
+    let store = VectorStore::new(Store::open(StoreConfig::default()).unwrap());
+    store
+        .upsert(
+            "ns-a",
+            "memory",
+            "user-a",
+            VectorUpsertInput {
+                records: vec![crate::VectorUpsertRecord {
+                    id: "existing".to_string(),
+                    values: vec![0.0, 1.0],
+                    metadata: serde_json::from_value(json!({ "userId": "user-a" })).unwrap(),
+                }],
+            },
+        )
+        .unwrap();
+    store.rebuild_ann("ns-a", "memory", "user-a", 2).unwrap();
+    store
+        .upsert(
+            "ns-a",
+            "memory",
+            "user-a",
+            VectorUpsertInput {
+                records: vec![crate::VectorUpsertRecord {
+                    id: "new".to_string(),
+                    values: vec![1.0, 0.0],
+                    metadata: serde_json::from_value(json!({ "userId": "user-a" })).unwrap(),
+                }],
+            },
+        )
+        .unwrap();
+
+    let result = store
+        .query(
+            "ns-a",
+            "memory",
+            "user-a",
+            VectorQueryInput {
+                vector: vec![1.0, 0.0],
+                top_k: Some(1),
+                filter: serde_json::from_value(json!({ "userId": { "$eq": "user-a" } })).unwrap(),
+                min_score: Some(0.0),
+                mode: Some(VectorQueryMode::Ann),
+                ef_search: Some(16),
+                candidate_limit: Some(8),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].id, "new");
+}
+
+#[test]
+fn ann_query_sees_delete_immediately_after_snapshot() {
+    let store = VectorStore::new(Store::open(StoreConfig::default()).unwrap());
+    store
+        .upsert(
+            "ns-a",
+            "memory",
+            "user-a",
+            VectorUpsertInput {
+                records: vec![
+                    crate::VectorUpsertRecord {
+                        id: "deleted".to_string(),
+                        values: vec![1.0, 0.0],
+                        metadata: Default::default(),
+                    },
+                    crate::VectorUpsertRecord {
+                        id: "remaining".to_string(),
+                        values: vec![0.9, 0.1],
+                        metadata: Default::default(),
+                    },
+                ],
+            },
+        )
+        .unwrap();
+    store.rebuild_ann("ns-a", "memory", "user-a", 2).unwrap();
+    store
+        .delete(
+            "ns-a",
+            "memory",
+            "user-a",
+            VectorDeleteInput {
+                ids: vec!["deleted".to_string()],
+            },
+        )
+        .unwrap();
+
+    let result = store
+        .query(
+            "ns-a",
+            "memory",
+            "user-a",
+            VectorQueryInput {
+                vector: vec![1.0, 0.0],
+                top_k: Some(1),
+                filter: Default::default(),
+                min_score: Some(0.0),
+                mode: Some(VectorQueryMode::Ann),
+                ef_search: Some(16),
+                candidate_limit: Some(8),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].id, "remaining");
 }
 
 #[test]
